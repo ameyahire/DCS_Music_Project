@@ -5,7 +5,12 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+
+    "node1": "cross-env NODE_ID=node1 PORT=5001 node server.js",
+    "node2": "cross-env NODE_ID=node2 PORT=5002 node server.js",
+    "node3": "cross-env NODE_ID=node3 PORT=5003 node server.js"
+    
   },
   "keywords": [],
   "author": "",
@@ -14,6 +19,7 @@
   "dependencies": {
     "axios": "^1.6.0",
     "cors": "^2.8.6",
+    "cross-env": "^10.1.0",
     "dotenv": "^16.6.1",
     "express": "^5.2.1",
     "mongoose": "^9.6.2",
