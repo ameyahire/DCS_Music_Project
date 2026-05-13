@@ -9,6 +9,7 @@ function Navbar() {
         <Link to="/">Home</Link>
         <Link to="/upload">Upload</Link>
         <Link to="/library">Library</Link>
+        <Link to="/consensus">System Status</Link>
       </div>
     </nav>
   );

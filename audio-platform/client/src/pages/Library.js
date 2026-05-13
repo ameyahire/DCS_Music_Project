@@ -30,7 +30,7 @@ function Library() {
             <div>
               <h4>{audio.title}</h4>
               <p style={{ margin: 0, color: "#666" }}>
-                Primary: {audio.primaryNode} | Replica: {audio.replicaNode}
+                Primary: {audio.primaryNode} | Replica: {audio.replicaNode} | Backup: {audio.backupNode || "none"}
               </p>
             </div>
             <button onClick={() => handleDelete(audio._id)}>

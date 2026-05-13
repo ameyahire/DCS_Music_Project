@@ -13,28 +13,34 @@ router.get("/:filename", async (req, res) => {
 
     if (!audio) return res.status(404).send("File not found");
 
-    let filePath = path.join(
-      __dirname,
-      "../storage_nodes",
+    const candidates = [
       audio.primaryNode,
-      audio.filename
-    );
+      audio.replicaNode,
+      audio.backupNode,
+    ].filter(Boolean);
 
-    // If primary node fails → use replica
-    if (!fs.existsSync(filePath)) {
-      console.log("Primary failed, using replica...");
+    let filePath = null;
+    let currentNode = null;
 
-      filePath = path.join(
+    for (const nodeName of candidates) {
+      const candidatePath = path.join(
         __dirname,
         "../storage_nodes",
-        audio.replicaNode,
+        nodeName,
         audio.filename
       );
-
-      if (!fs.existsSync(filePath)) {
-        return res.status(500).send("File unavailable");
+      if (fs.existsSync(candidatePath)) {
+        filePath = candidatePath;
+        currentNode = nodeName;
+        break;
       }
     }
+
+    if (!filePath) {
+      return res.status(500).send("File unavailable");
+    }
+
+    console.log(`Streaming from ${currentNode}`);
 
     const stat = fs.statSync(filePath);
     const fileSize = stat.size;
@@ -57,7 +63,6 @@ router.get("/:filename", async (req, res) => {
     };
 
     res.writeHead(206, headers);
-
     fs.createReadStream(filePath, { start, end }).pipe(res);
   } catch (err) {
     res.status(500).send(err.message);

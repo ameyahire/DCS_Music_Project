@@ -5,6 +5,7 @@ const audioSchema = new mongoose.Schema({
   filename: String,
   primaryNode: String,
   replicaNode: String,
+  backupNode: String,
   uploadedAt: {
     type: Date,
     default: Date.now,

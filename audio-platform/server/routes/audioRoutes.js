@@ -2,10 +2,9 @@ const express = require("express");
 const multer = require("multer");
 const Audio = require("../models/Audio");
 const {
-  getNextNode,
-  saveFileToNode,
-  replicateFile,
-  deleteFileFromNode,
+  saveDistributedFile,
+  deleteFileFromAllNodes,
+  getNodeStatus,
 } = require("../utils/storageManager");
 
 const router = express.Router();
@@ -19,31 +18,23 @@ router.post("/upload", upload.single("audio"), async (req, res) => {
   try {
     const filename = Date.now() + "-" + req.file.originalname;
 
-    // 1. Select node
-    const primaryNode = getNextNode();
-
-    // 2. Save to primary
-    saveFileToNode(req.file.buffer, filename, primaryNode);
-
-    // 3. Replicate
-    const replicaNode = replicateFile(
+    const { primaryNode, replicaNode, backupNode } = saveDistributedFile(
       req.file.buffer,
-      filename,
-      primaryNode
+      filename
     );
 
-    // 4. Save metadata
     const newAudio = new Audio({
       title: req.body.title,
       filename,
       primaryNode,
       replicaNode,
+      backupNode,
     });
 
     await newAudio.save();
 
     res.json({
-      message: "Uploaded (distributed)",
+      message: "Uploaded with distributed storage",
       data: newAudio,
     });
   } catch (err) {
@@ -63,15 +54,18 @@ router.delete("/:id", async (req, res) => {
     const audio = await Audio.findById(req.params.id);
     if (!audio) return res.status(404).json({ error: "Audio not found" });
 
-    deleteFileFromNode(audio.filename, audio.primaryNode);
-    deleteFileFromNode(audio.filename, audio.replicaNode);
-
+    deleteFileFromAllNodes(audio.filename);
     await Audio.findByIdAndDelete(req.params.id);
 
     res.json({ message: "Audio deleted successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+router.get("/status", async (req, res) => {
+  const status = getNodeStatus();
+  res.json(status);
 });
 
 module.exports = router;
