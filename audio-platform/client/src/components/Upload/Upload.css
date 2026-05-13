@@ -1,0 +1,12 @@
+.upload-container {
+  padding: 20px;
+}
+
+.upload-container input {
+  display: block;
+  margin: 10px 0;
+}
+
+.upload-container button {
+  padding: 10px 15px;
+}
