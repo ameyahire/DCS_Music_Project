@@ -3,38 +3,63 @@ const axios = require("axios");
 
 const router = express.Router();
 
-// ===============================
-// Dynamic Node Config
-// ===============================
+// ======================================
+// Dynamic Node Configuration
+// ======================================
 const NODE_ID = process.env.NODE_ID || "node1";
 const PORT = process.env.PORT || 5001;
 
-// ===============================
+// ======================================
 // Cluster Nodes
-// ===============================
+// ======================================
 const nodes = [
-  { id: "node1", url: "http://localhost:5001", role: "primary" },
-  { id: "node2", url: "http://localhost:5002", role: "replica" },
-  { id: "node3", url: "http://localhost:5003", role: "backup" },
+  {
+    id: "node1",
+    url: "http://localhost:5001",
+    role: "primary",
+  },
+  {
+    id: "node2",
+    url: "http://localhost:5002",
+    role: "replica",
+  },
+  {
+    id: "node3",
+    url: "http://localhost:5003",
+    role: "backup",
+  },
 ];
 
-// ===============================
-// Node Health
-// ===============================
+// ======================================
+// Node Health Tracking
+// ======================================
 const nodeHealth = {
-  node1: { isHealthy: true, failedAt: null },
-  node2: { isHealthy: true, failedAt: null },
-  node3: { isHealthy: true, failedAt: null },
+  node1: {
+    isHealthy: true,
+    failedAt: null,
+  },
+
+  node2: {
+    isHealthy: true,
+    failedAt: null,
+  },
+
+  node3: {
+    isHealthy: true,
+    failedAt: null,
+  },
 };
 
-// ===============================
-// Raft State Variables
-// ===============================
+// ======================================
+// Raft Variables
+// ======================================
 let currentTerm = 0;
+
 let votedFor = null;
+
 let log = [];
+
 let commitIndex = 0;
-let lastApplied = 0;
 
 const STATES = {
   FOLLOWER: "follower",
@@ -43,83 +68,106 @@ const STATES = {
 };
 
 let currentState = STATES.FOLLOWER;
+
 let leaderId = null;
 
-// ===============================
+// ======================================
 // Timers
-// ===============================
-const HEARTBEAT_INTERVAL = 200;
+// ======================================
+const HEARTBEAT_INTERVAL = 2000;
 
-const electionTimeout = () => Math.random() * 1500 + 1500;
+const electionTimeout = () =>
+  Math.random() * 5000 + 3000;
 
 let electionTimer = null;
+
 let heartbeatTimer = null;
 
-// ===============================
+// ======================================
 // Reset Election Timer
-// ===============================
+// ======================================
 function resetElectionTimer() {
   if (electionTimer) {
     clearTimeout(electionTimer);
   }
 
   electionTimer = setTimeout(() => {
-    startElection();
+    if (currentState !== STATES.LEADER) {
+      startElection();
+    }
   }, electionTimeout());
 }
 
-// ===============================
+// ======================================
 // Start Election
-// ===============================
+// ======================================
 async function startElection() {
   currentState = STATES.CANDIDATE;
+
   currentTerm++;
 
   votedFor = NODE_ID;
-
-  let votes = 1;
 
   console.log(
     `🗳️ ${NODE_ID} starting election for term ${currentTerm}`
   );
 
-  const otherNodes = nodes.filter((n) => n.id !== NODE_ID);
+  const otherNodes = nodes.filter(
+    (node) => node.id !== NODE_ID
+  );
 
-  const voteRequests = otherNodes.map(async (node) => {
-    try {
-      const response = await axios.post(
-        `${node.url}/api/consensus/request-vote`,
-        {
-          term: currentTerm,
-          candidateId: NODE_ID,
-          lastLogIndex: log.length - 1,
-          lastLogTerm:
-            log.length > 0
-              ? log[log.length - 1].term
-              : 0,
-        },
-        {
-          timeout: 1000,
+  let votes = 1;
+
+  const results = await Promise.all(
+    otherNodes.map(async (node) => {
+      try {
+        const response = await axios.post(
+          `${node.url}/api/consensus/request-vote`,
+          {
+            term: currentTerm,
+            candidateId: NODE_ID,
+            lastLogIndex: log.length - 1,
+            lastLogTerm:
+              log.length > 0
+                ? log[log.length - 1].term
+                : 0,
+          },
+          {
+            timeout: 2000,
+          }
+        );
+
+        if (response.data.voteGranted) {
+          console.log(
+            `✅ ${node.id} voted for ${NODE_ID}`
+          );
         }
-      );
 
-      if (response.data.voteGranted) {
-        votes++;
-        console.log(`✅ Vote received from ${node.id}`);
+        return response.data.voteGranted;
+      } catch (error) {
+        console.log(
+          `❌ Failed to contact ${node.id}`
+        );
+
+        return false;
       }
-    } catch (error) {
-      console.log(`❌ Failed to contact ${node.id}`);
-    }
+    })
+  );
+
+  results.forEach((granted) => {
+    if (granted) votes++;
   });
 
-  await Promise.all(voteRequests);
+  console.log(
+    `📊 ${NODE_ID} received ${votes} votes`
+  );
 
-  // Majority check
+  // Majority in 3-node cluster = 2
   if (votes > nodes.length / 2) {
     becomeLeader();
   } else {
     console.log(
-      `❌ ${NODE_ID} failed election with ${votes} votes`
+      `❌ ${NODE_ID} failed election`
     );
 
     currentState = STATES.FOLLOWER;
@@ -128,9 +176,9 @@ async function startElection() {
   }
 }
 
-// ===============================
+// ======================================
 // Become Leader
-// ===============================
+// ======================================
 function becomeLeader() {
   currentState = STATES.LEADER;
 
@@ -140,74 +188,94 @@ function becomeLeader() {
     `👑 ${NODE_ID} became LEADER for term ${currentTerm}`
   );
 
+  // Stop old heartbeat timer
   if (heartbeatTimer) {
     clearInterval(heartbeatTimer);
   }
 
+  // Send heartbeats periodically
   heartbeatTimer = setInterval(() => {
     sendHeartbeats();
   }, HEARTBEAT_INTERVAL);
 }
 
-// ===============================
+// ======================================
 // Send Heartbeats
-// ===============================
+// ======================================
 async function sendHeartbeats() {
   if (currentState !== STATES.LEADER) return;
 
-  const otherNodes = nodes.filter((n) => n.id !== NODE_ID);
+  const followers = nodes.filter(
+    (node) => node.id !== NODE_ID
+  );
 
-  const heartbeatRequests = otherNodes.map(async (node) => {
-    try {
-      await axios.post(
-        `${node.url}/api/consensus/append-entries`,
-        {
-          term: currentTerm,
-          leaderId: NODE_ID,
-          prevLogIndex: log.length - 1,
-          prevLogTerm:
-            log.length > 0
-              ? log[log.length - 1].term
-              : 0,
-          entries: [],
-          leaderCommit: commitIndex,
-        },
-        {
-          timeout: 1000,
-        }
-      );
+  await Promise.all(
+    followers.map(async (node) => {
+      try {
+        await axios.post(
+          `${node.url}/api/consensus/append-entries`,
+          {
+            term: currentTerm,
+            leaderId: NODE_ID,
+            prevLogIndex: log.length - 1,
+            prevLogTerm:
+              log.length > 0
+                ? log[log.length - 1].term
+                : 0,
+            entries: [],
+            leaderCommit: commitIndex,
+          },
+          {
+            timeout: 2000,
+          }
+        );
 
-      console.log(`💓 Heartbeat sent to ${node.id}`);
-    } catch (error) {
-      console.log(`❌ Heartbeat failed to ${node.id}`);
-    }
-  });
-
-  await Promise.all(heartbeatRequests);
+        console.log(
+          `💓 Heartbeat sent to ${node.id}`
+        );
+      } catch (error) {
+        console.log(
+          `❌ Heartbeat failed to ${node.id}`
+        );
+      }
+    })
+  );
 }
 
-// ===============================
+// ======================================
 // Request Vote Endpoint
-// ===============================
+// ======================================
 router.post("/request-vote", (req, res) => {
   const {
     term,
     candidateId,
-    lastLogIndex,
-    lastLogTerm,
   } = req.body;
 
+  // Reject lower term
+  if (term < currentTerm) {
+    return res.json({
+      term: currentTerm,
+      voteGranted: false,
+    });
+  }
+
+  // Update to newer term
   if (term > currentTerm) {
     currentTerm = term;
+
     votedFor = null;
+
     currentState = STATES.FOLLOWER;
   }
 
-  const voteGranted =
-    term >= currentTerm &&
-    (votedFor === null || votedFor === candidateId);
+  let voteGranted = false;
 
-  if (voteGranted) {
+  if (
+    votedFor === null ||
+    votedFor === candidateId
+  ) {
+    voteGranted = true;
+
     votedFor = candidateId;
 
     resetElectionTimer();
@@ -223,24 +291,32 @@ router.post("/request-vote", (req, res) => {
   });
 });
 
-// ===============================
-// Append Entries / Heartbeat
-// ===============================
+// ======================================
+// Append Entries / Heartbeats
+// ======================================
 router.post("/append-entries", (req, res) => {
   const {
     term,
-    leaderId: newLeaderId,
+    leaderId: incomingLeader,
     leaderCommit,
   } = req.body;
 
-  if (term >= currentTerm) {
-    currentTerm = term;
-    leaderId = newLeaderId;
-
-    currentState = STATES.FOLLOWER;
-
-    resetElectionTimer();
+  // Reject outdated leader
+  if (term < currentTerm) {
+    return res.json({
+      term: currentTerm,
+      success: false,
+    });
   }
+
+  // Accept newer term
+  currentTerm = term;
+
+  leaderId = incomingLeader;
+
+  currentState = STATES.FOLLOWER;
+
+  resetElectionTimer();
 
   if (leaderCommit > commitIndex) {
     commitIndex = Math.min(
@@ -249,15 +325,19 @@ router.post("/append-entries", (req, res) => {
     );
   }
 
+  console.log(
+    `💓 ${NODE_ID} received heartbeat from ${incomingLeader}`
+  );
+
   res.json({
     term: currentTerm,
     success: true,
   });
 });
 
-// ===============================
+// ======================================
 // Cluster Status
-// ===============================
+// ======================================
 router.get("/status", (req, res) => {
   res.json({
     nodeId: NODE_ID,
@@ -271,78 +351,77 @@ router.get("/status", (req, res) => {
   });
 });
 
-// ===============================
+// ======================================
 // Simulate Node Failure
-// ===============================
-router.post("/simulate-failure/:nodeId", (req, res) => {
-  const { nodeId } = req.params;
+// ======================================
+router.post(
+  "/simulate-failure/:nodeId",
+  (req, res) => {
+    const { nodeId } = req.params;
 
-  if (!nodeHealth[nodeId]) {
-    return res.status(400).json({
-      error: "Invalid node ID",
+    if (!nodeHealth[nodeId]) {
+      return res.status(400).json({
+        error: "Invalid node ID",
+      });
+    }
+
+    nodeHealth[nodeId].isHealthy = false;
+
+    nodeHealth[nodeId].failedAt =
+      new Date().toISOString();
+
+    console.log(`🔴 ${nodeId} FAILED`);
+
+    res.json({
+      message: `${nodeId} failure simulated`,
+      nodeHealth,
     });
   }
+);
 
-  if (nodeId === NODE_ID) {
-    return res.status(400).json({
-      error: "Cannot fail current node",
-    });
-  }
-
-  nodeHealth[nodeId].isHealthy = false;
-  nodeHealth[nodeId].failedAt =
-    new Date().toISOString();
-
-  console.log(
-    `🔴 Node ${nodeId} FAILED`
-  );
-
-  res.json({
-    message: `Node ${nodeId} failed`,
-    nodeHealth,
-  });
-});
-
-// ===============================
+// ======================================
 // Recover Node
-// ===============================
-router.post("/recover-node/:nodeId", (req, res) => {
-  const { nodeId } = req.params;
+// ======================================
+router.post(
+  "/recover-node/:nodeId",
+  (req, res) => {
+    const { nodeId } = req.params;
 
-  if (!nodeHealth[nodeId]) {
-    return res.status(400).json({
-      error: "Invalid node ID",
+    if (!nodeHealth[nodeId]) {
+      return res.status(400).json({
+        error: "Invalid node ID",
+      });
+    }
+
+    nodeHealth[nodeId].isHealthy = true;
+
+    nodeHealth[nodeId].failedAt = null;
+
+    console.log(`🟢 ${nodeId} RECOVERED`);
+
+    res.json({
+      message: `${nodeId} recovered`,
+      nodeHealth,
     });
   }
+);
 
-  nodeHealth[nodeId].isHealthy = true;
-  nodeHealth[nodeId].failedAt = null;
-
-  console.log(
-    `🟢 Node ${nodeId} RECOVERED`
-  );
-
-  res.json({
-    message: `Node ${nodeId} recovered`,
-    nodeHealth,
-  });
-});
-
-// ===============================
-// Node Health Endpoint
-// ===============================
+// ======================================
+// Get Node Health
+// ======================================
 router.get("/node-health", (req, res) => {
   const summary = {};
 
   Object.entries(nodeHealth).forEach(
     ([nodeId, health]) => {
-      summary[nodeId] = {
+            summary[nodeId] = {
+        isHealthy: health.isHealthy,
         status: health.isHealthy
           ? "healthy"
-          : "failed",
+         : "failed",
         failedAt: health.failedAt,
         nodeInfo: nodes.find(
-          (n) => n.id === nodeId
+         (n) => n.id === nodeId
         ),
       };
     }
@@ -351,27 +430,35 @@ router.get("/node-health", (req, res) => {
   res.json(summary);
 });
 
-// ===============================
-// Check Specific Node Health
-// ===============================
+// ======================================
+// Check Single Node Health
+// ======================================
 router.get(
   "/is-node-healthy/:nodeId",
   (req, res) => {
     const { nodeId } = req.params;
 
-    const isHealthy =
-      nodeHealth[nodeId]?.isHealthy ?? true;
-
     res.json({
       nodeId,
-      isHealthy,
+      isHealthy:
+        nodeHealth[nodeId]?.isHealthy ??
+        false,
     });
   }
 );
 
-// ===============================
-// Start Initial Election Timer
-// ===============================
+// ======================================
+// Root Test Route
+// ======================================
+router.get("/", (req, res) => {
+  res.json({
+    message: `${NODE_ID} consensus service running`,
+  });
+});
+
+// ======================================
+// Start Election Timer
+// ======================================
 resetElectionTimer();
 
 module.exports = router;

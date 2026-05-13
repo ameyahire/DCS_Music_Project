@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { getAudios } from "../../services/api";
 import "./Consensus.css";
 
-const API_URL = "http://localhost:5000/api/consensus";
+const API_URL = "http://localhost:5001/api/consensus";
 
 function Consensus() {
   const [status, setStatus] = useState(null);

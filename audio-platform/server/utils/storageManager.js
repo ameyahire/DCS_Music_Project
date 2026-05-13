@@ -1,406 +1,292 @@
-const express = require("express");
-const axios = require("axios");
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
 
-const router = express.Router();
-
-// ======================================
-// Dynamic Node Config
-// ======================================
-const NODE_ID = process.env.NODE_ID || "node1";
-const PORT = process.env.PORT || 5001;
-
-// ======================================
-// Cluster Nodes
-// ======================================
-const nodes = [
-  { id: "node1", url: "http://localhost:5001", role: "primary" },
-  { id: "node2", url: "http://localhost:5002", role: "replica" },
-  { id: "node3", url: "http://localhost:5003", role: "backup" },
+// ============================================
+// Storage Node Configuration
+// ============================================
+const STORAGE_NODES = [
+  {
+    id: "node1",
+    role: "primary",
+    path: path.join(__dirname, "../storage_nodes/node1"),
+  },
+  {
+    id: "node2",
+    role: "replica",
+    path: path.join(__dirname, "../storage_nodes/node2"),
+  },
+  {
+    id: "node3",
+    role: "backup",
+    path: path.join(__dirname, "../storage_nodes/node3"),
+  },
 ];
 
-// ======================================
-// Node Health
-// ======================================
-const nodeHealth = {
-  node1: { isHealthy: true, failedAt: null },
-  node2: { isHealthy: true, failedAt: null },
-  node3: { isHealthy: true, failedAt: null },
-};
-
-// ======================================
-// Raft Variables
-// ======================================
-let currentTerm = 0;
-let votedFor = null;
-let log = [];
-let commitIndex = 0;
-
-const STATES = {
-  FOLLOWER: "follower",
-  CANDIDATE: "candidate",
-  LEADER: "leader",
-};
-
-let currentState = STATES.FOLLOWER;
-let leaderId = null;
-
-// ======================================
-// Timers
-// ======================================
-const HEARTBEAT_INTERVAL = 2000;
-
-const electionTimeout = () =>
-  Math.random() * 5000 + 3000;
-
-let electionTimer = null;
-let heartbeatTimer = null;
-
-// ======================================
-// Reset Election Timer
-// ======================================
-function resetElectionTimer() {
-  if (electionTimer) {
-    clearTimeout(electionTimer);
-  }
-
-  electionTimer = setTimeout(() => {
-    if (currentState !== STATES.LEADER) {
-      startElection();
+// ============================================
+// Ensure Storage Directories Exist
+// ============================================
+function initializeStorageNodes() {
+  STORAGE_NODES.forEach((node) => {
+    if (!fs.existsSync(node.path)) {
+      fs.mkdirSync(node.path, { recursive: true });
+      console.log(`📁 Created storage node: ${node.id}`);
     }
-  }, electionTimeout());
+  });
 }
 
-// ======================================
-// Start Election
-// ======================================
-async function startElection() {
-  currentState = STATES.CANDIDATE;
+initializeStorageNodes();
 
-  currentTerm++;
+// ============================================
+// Generate Unique File ID
+// ============================================
+function generateFileId(filename) {
+  const timestamp = Date.now();
+  const random = crypto.randomBytes(6).toString("hex");
 
-  votedFor = NODE_ID;
+  return `${timestamp}-${random}-${filename}`;
+}
 
-  console.log(
-    `🗳️ ${NODE_ID} starting election for term ${currentTerm}`
-  );
+// ============================================
+// Consistent Hashing
+// ============================================
+function getNodeByHash(fileId) {
+  const hash = crypto
+    .createHash("md5")
+    .update(fileId)
+    .digest("hex");
 
-  const otherNodes = nodes.filter(
-    (n) => n.id !== NODE_ID
-  );
+  const numericHash = parseInt(hash.substring(0, 8), 16);
 
-  let votes = 1;
+  const index = numericHash % STORAGE_NODES.length;
 
-  const results = await Promise.all(
-    otherNodes.map(async (node) => {
-      try {
-        const response = await axios.post(
-          `${node.url}/api/consensus/request-vote`,
-          {
-            term: currentTerm,
-            candidateId: NODE_ID,
-            lastLogIndex: log.length - 1,
-            lastLogTerm:
-              log.length > 0
-                ? log[log.length - 1].term
-                : 0,
-          },
-          {
-            timeout: 2000,
-          }
-        );
+  return STORAGE_NODES[index];
+}
 
-        if (response.data.voteGranted) {
-          console.log(
-            `✅ ${node.id} voted for ${NODE_ID}`
-          );
-        }
+// ============================================
+// Save File To Distributed Storage
+// ============================================
+async function storeFile(file) {
+  try {
+    const fileId = generateFileId(file.originalname);
 
-        return response.data.voteGranted;
-      } catch (error) {
-        console.log(
-          `❌ Failed to contact ${node.id}`
-        );
+    // Select primary node using hashing
+    const primaryNode = getNodeByHash(fileId);
 
-        return false;
-      }
-    })
-  );
-
-  results.forEach((granted) => {
-    if (granted) votes++;
-  });
-
-  console.log(
-    `📊 ${NODE_ID} received ${votes} votes`
-  );
-
-  // Majority = 2 in 3-node cluster
-  if (votes > nodes.length / 2) {
-    becomeLeader();
-  } else {
-    console.log(
-      `❌ ${NODE_ID} failed election`
+    const primaryPath = path.join(
+      primaryNode.path,
+      fileId
     );
 
-    currentState = STATES.FOLLOWER;
-
-    resetElectionTimer();
-  }
-}
-
-// ======================================
-// Become Leader
-// ======================================
-function becomeLeader() {
-  currentState = STATES.LEADER;
-
-  leaderId = NODE_ID;
-
-  console.log(
-    `👑 ${NODE_ID} became LEADER for term ${currentTerm}`
-  );
-
-  if (heartbeatTimer) {
-    clearInterval(heartbeatTimer);
-  }
-
-  heartbeatTimer = setInterval(() => {
-    sendHeartbeats();
-  }, HEARTBEAT_INTERVAL);
-}
-
-// ======================================
-// Send Heartbeats
-// ======================================
-async function sendHeartbeats() {
-  if (currentState !== STATES.LEADER) return;
-
-  const otherNodes = nodes.filter(
-    (n) => n.id !== NODE_ID
-  );
-
-  await Promise.all(
-    otherNodes.map(async (node) => {
-      try {
-        await axios.post(
-          `${node.url}/api/consensus/append-entries`,
-          {
-            term: currentTerm,
-            leaderId: NODE_ID,
-            prevLogIndex: log.length - 1,
-            prevLogTerm:
-              log.length > 0
-                ? log[log.length - 1].term
-                : 0,
-            entries: [],
-            leaderCommit: commitIndex,
-          },
-          {
-            timeout: 2000,
-          }
-        );
-
-        console.log(
-          `💓 Heartbeat sent to ${node.id}`
-        );
-      } catch (error) {
-        console.log(
-          `❌ Heartbeat failed to ${node.id}`
-        );
-      }
-    })
-  );
-}
-
-// ======================================
-// Request Vote Endpoint
-// ======================================
-router.post("/request-vote", (req, res) => {
-  const { term, candidateId } = req.body;
-
-  if (term > currentTerm) {
-    currentTerm = term;
-
-    votedFor = null;
-
-    currentState = STATES.FOLLOWER;
-  }
-
-  let voteGranted = false;
-
-  if (
-    term >= currentTerm &&
-    (votedFor === null ||
-      votedFor === candidateId)
-  ) {
-    voteGranted = true;
-
-    votedFor = candidateId;
-
-    resetElectionTimer();
+    // Save primary file
+    fs.writeFileSync(primaryPath, file.buffer);
 
     console.log(
-      `🗳️ ${NODE_ID} voted for ${candidateId}`
+      `✅ File stored in ${primaryNode.id}`
     );
-  }
 
-  res.json({
-    term: currentTerm,
-    voteGranted,
-  });
-});
-
-// ======================================
-// Append Entries (Heartbeat)
-// ======================================
-router.post("/append-entries", (req, res) => {
-  const {
-    term,
-    leaderId: incomingLeader,
-    leaderCommit,
-  } = req.body;
-
-  if (term >= currentTerm) {
-    currentTerm = term;
-
-    leaderId = incomingLeader;
-
-    currentState = STATES.FOLLOWER;
-
-    resetElectionTimer();
-  }
-
-  if (leaderCommit > commitIndex) {
-    commitIndex = Math.min(
-      leaderCommit,
-      log.length - 1
+    // ============================================
+    // Replication
+    // ============================================
+    const replicas = STORAGE_NODES.filter(
+      (node) => node.id !== primaryNode.id
     );
-  }
 
-  console.log(
-    `💓 ${NODE_ID} received heartbeat from ${incomingLeader}`
-  );
+    replicas.forEach((replicaNode) => {
+      const replicaPath = path.join(
+        replicaNode.path,
+        fileId
+      );
 
-  res.json({
-    term: currentTerm,
-    success: true,
-  });
-});
+      fs.writeFileSync(replicaPath, file.buffer);
 
-// ======================================
-// Cluster Status
-// ======================================
-router.get("/status", (req, res) => {
-  res.json({
-    nodeId: NODE_ID,
-    port: PORT,
-    state: currentState,
-    term: currentTerm,
-    leader: leaderId,
-    logLength: log.length,
-    commitIndex,
-    nodeHealth,
-  });
-});
-
-// ======================================
-// Simulate Node Failure
-// ======================================
-router.post(
-  "/simulate-failure/:nodeId",
-  (req, res) => {
-    const { nodeId } = req.params;
-
-    if (!nodeHealth[nodeId]) {
-      return res.status(400).json({
-        error: "Invalid node ID",
-      });
-    }
-
-    nodeHealth[nodeId].isHealthy = false;
-
-    nodeHealth[nodeId].failedAt =
-      new Date().toISOString();
-
-    console.log(`🔴 ${nodeId} FAILED`);
-
-    res.json({
-      message: `${nodeId} failed`,
-      nodeHealth,
+      console.log(
+        `📦 Replicated to ${replicaNode.id}`
+      );
     });
+
+    return {
+      success: true,
+      fileId,
+      primaryNode: primaryNode.id,
+      replicas: replicas.map((r) => r.id),
+      storagePath: primaryPath,
+    };
+  } catch (error) {
+    console.error("❌ Storage Error:", error);
+
+    return {
+      success: false,
+      error: error.message,
+    };
   }
-);
+}
 
-// ======================================
-// Recover Node
-// ======================================
-router.post(
-  "/recover-node/:nodeId",
-  (req, res) => {
-    const { nodeId } = req.params;
+// ============================================
+// Get File Path
+// ============================================
+function getFilePath(fileId) {
+  for (const node of STORAGE_NODES) {
+    const filePath = path.join(node.path, fileId);
 
-    if (!nodeHealth[nodeId]) {
-      return res.status(400).json({
-        error: "Invalid node ID",
-      });
-    }
-
-    nodeHealth[nodeId].isHealthy = true;
-
-    nodeHealth[nodeId].failedAt = null;
-
-    console.log(`🟢 ${nodeId} RECOVERED`);
-
-    res.json({
-      message: `${nodeId} recovered`,
-      nodeHealth,
-    });
-  }
-);
-
-// ======================================
-// Node Health Endpoint
-// ======================================
-router.get("/node-health", (req, res) => {
-  const summary = {};
-
-  Object.entries(nodeHealth).forEach(
-    ([nodeId, health]) => {
-      summary[nodeId] = {
-        status: health.isHealthy
-          ? "healthy"
-          : "failed",
-        failedAt: health.failedAt,
-        nodeInfo: nodes.find(
-          (n) => n.id === nodeId
-        ),
+    if (fs.existsSync(filePath)) {
+      return {
+        exists: true,
+        node: node.id,
+        path: filePath,
       };
     }
-  );
+  }
 
-  res.json(summary);
-});
+  return {
+    exists: false,
+  };
+}
 
-// ======================================
-// Single Node Health
-// ======================================
-router.get(
-  "/is-node-healthy/:nodeId",
-  (req, res) => {
-    const { nodeId } = req.params;
+// ============================================
+// Stream File
+// ============================================
+function streamFile(fileId, res) {
+  const fileInfo = getFilePath(fileId);
 
-    res.json({
-      nodeId,
-      isHealthy:
-        nodeHealth[nodeId]?.isHealthy ??
-        false,
+  if (!fileInfo.exists) {
+    return res.status(404).json({
+      error: "File not found",
     });
   }
-);
 
-// ======================================
-// Start Timer
-// ======================================
-resetElectionTimer();
+  const stat = fs.statSync(fileInfo.path);
+  const fileSize = stat.size;
+  const range = res.req.headers.range;
 
-module.exports = router;
+  // ============================================
+  // HTTP Range Streaming
+  // ============================================
+  if (range) {
+    const parts = range.replace(/bytes=/, "").split("-");
+
+    const start = parseInt(parts[0], 10);
+
+    const end = parts[1]
+      ? parseInt(parts[1], 10)
+      : fileSize - 1;
+
+    const chunkSize = end - start + 1;
+
+    const stream = fs.createReadStream(fileInfo.path, {
+      start,
+      end,
+    });
+
+    const headers = {
+      "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+      "Accept-Ranges": "bytes",
+      "Content-Length": chunkSize,
+      "Content-Type": "audio/mpeg",
+    };
+
+    res.writeHead(206, headers);
+
+    stream.pipe(res);
+  } else {
+    const headers = {
+      "Content-Length": fileSize,
+      "Content-Type": "audio/mpeg",
+    };
+
+    res.writeHead(200, headers);
+
+    fs.createReadStream(fileInfo.path).pipe(res);
+  }
+}
+
+// ============================================
+// Download File
+// ============================================
+function downloadFile(fileId, res) {
+  const fileInfo = getFilePath(fileId);
+
+  if (!fileInfo.exists) {
+    return res.status(404).json({
+      error: "File not found",
+    });
+  }
+
+  res.download(fileInfo.path);
+}
+
+// ============================================
+// Delete File
+// ============================================
+function deleteFile(fileId) {
+  try {
+    STORAGE_NODES.forEach((node) => {
+      const filePath = path.join(node.path, fileId);
+
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+
+        console.log(
+          `🗑️ Deleted from ${node.id}`
+        );
+      }
+    });
+
+    return {
+      success: true,
+      message: "File deleted successfully",
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+}
+
+// ============================================
+// Get Storage Statistics
+// ============================================
+function getStorageStats() {
+  const stats = STORAGE_NODES.map((node) => {
+    const files = fs.readdirSync(node.path);
+
+    let totalSize = 0;
+
+    files.forEach((file) => {
+      const filePath = path.join(node.path, file);
+
+      const stat = fs.statSync(filePath);
+
+      totalSize += stat.size;
+    });
+
+    return {
+      nodeId: node.id,
+      role: node.role,
+      totalFiles: files.length,
+      totalSizeMB: (
+        totalSize /
+        (1024 * 1024)
+      ).toFixed(2),
+    };
+  });
+
+  return stats;
+}
+
+// ============================================
+// Export Functions
+// ============================================
+module.exports = {
+  STORAGE_NODES,
+  initializeStorageNodes,
+  generateFileId,
+  getNodeByHash,
+  storeFile,
+  getFilePath,
+  streamFile,
+  downloadFile,
+  deleteFile,
+  getStorageStats,
+};
