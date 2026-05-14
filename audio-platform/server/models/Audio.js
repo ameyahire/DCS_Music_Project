@@ -1,15 +1,38 @@
 const mongoose = require("mongoose");
 
-const audioSchema = new mongoose.Schema({
-  title: String,
-  filename: String,
-  primaryNode: String,
-  replicaNode: String,
-  backupNode: String,
-  uploadedAt: {
-    type: Date,
-    default: Date.now,
-  },
-});
+const audioSchema = new mongoose.Schema(
+  {
+    title: {
+      type: String,
+      required: true,
+    },
 
-module.exports = mongoose.model("Audio", audioSchema);
+    filename: {
+      type: String,
+      required: true,
+    },
+
+    primaryNode: {
+      type: String,
+      required: true,
+    },
+
+    replicaNode: {
+      type: String,
+      required: true,
+    },
+
+    backupNode: {
+      type: String,
+      default: null,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+module.exports = mongoose.model(
+  "Audio",
+  audioSchema
+);
