@@ -1,8 +1,15 @@
 import { useEffect, useState } from "react";
-import { getAudios, deleteAudio } from "../services/api";
+
+import {
+  getAudios,
+  deleteAudio,
+} from "../services/api";
+
 import Player from "../components/Player/Player";
 
 import "./Library.css";
+
+import placeholder from "../assets/placeholder.png";
 
 function Library() {
   const [audios, setAudios] = useState([]);
@@ -13,11 +20,17 @@ function Library() {
 
   const fetchAudios = async () => {
     const res = await getAudios();
+
     setAudios(res.data);
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Delete this audio?")) return;
+    if (
+      !window.confirm(
+        "Delete this audio?"
+      )
+    )
+      return;
 
     await deleteAudio(id);
 
@@ -25,41 +38,52 @@ function Library() {
   };
 
   return (
-    <div className="library-container">
-      <h2 className="library-title">
-        Distributed Audio Library
-      </h2>
+    <div className="library-page">
+      <h1 className="library-title">
+        Music Library
+      </h1>
 
-      {audios.length === 0 ? (
-        <div className="empty-library">
-          No audio files uploaded yet.
-        </div>
-      ) : (
-        audios.map((audio) => (
+      <div className="music-list">
+        {audios.map((audio) => (
           <div
             key={audio._id}
-            className="audio-card"
+            className="music-item"
           >
-            <div className="audio-header">
-              <div className="audio-info">
-                <h4>{audio.title}</h4>
+            {/* LEFT */}
+            <div className="music-left">
+              <img
+                src={placeholder}
+                alt="cover"
+                className="music-image"
+              />
 
-                <div>
-                  <span className="node-tag primary-tag">
-                    Primary: {audio.primaryNode}
-                  </span>
+              <div className="music-info">
+                <h3>{audio.title}</h3>
 
-                  <span className="node-tag replica-tag">
-                    Replica: {audio.replicaNode}
-                  </span>
+                <div className="node-info">
+                  <span className="node-badge primary-node">
+                   Primary: {audio.primaryNode}
+                 </span>
+                        
+                 <span className="node-badge replica-node">
+                   Replica: {audio.replicaNode}
+                 </span>
 
-                  <span className="node-tag backup-tag">
-                    Backup:{" "}
-                    {audio.backupNode || "none"}
+                 <span className="node-badge backup-node">
+                    Backup: {audio.backupNode || "none"}
                   </span>
                 </div>
-              </div>
 
+                <div className="music-player">
+                  <Player
+                    filename={audio.filename}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* RIGHT */}
+            <div className="music-right">
               <button
                 className="delete-btn"
                 onClick={() =>
@@ -69,11 +93,9 @@ function Library() {
                 Delete
               </button>
             </div>
-
-            <Player filename={audio.filename} />
           </div>
-        ))
-      )}
+        ))}
+      </div>
     </div>
   );
 }

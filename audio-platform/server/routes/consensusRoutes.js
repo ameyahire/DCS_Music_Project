@@ -231,7 +231,7 @@ async function sendHeartbeats() {
         );
 
         console.log(
-          `💓 Heartbeat sent to ${node.id}`
+          `💚 Heartbeat sent to ${node.id}`
         );
       } catch (error) {
         console.log(
@@ -326,7 +326,7 @@ router.post("/append-entries", (req, res) => {
   }
 
   console.log(
-    `💓 ${NODE_ID} received heartbeat from ${incomingLeader}`
+    `💚 ${NODE_ID} received heartbeat from ${incomingLeader}`
   );
 
   res.json({

@@ -1,189 +1,236 @@
 /* =========================================
-   Library Container
+   Library Page
 ========================================= */
-.library-container {
-  padding: 40px;
-
+.library-page {
   min-height: 100vh;
 
-  background: linear-gradient(
-    135deg,
-    #0f172a,
-    #111827
-  );
+  padding: 40px;
 
-  color: white;
+  background: #f5f5f5;
 }
 
 /* =========================================
    Title
 ========================================= */
 .library-title {
-  font-size: 2.2rem;
-  font-weight: 700;
+  font-size: 2.8rem;
+
+  font-weight: 800;
+
+  color: #111;
 
   margin-bottom: 30px;
-
-  color: #f8fafc;
 }
 
 /* =========================================
-   Audio Card
+   Music List
 ========================================= */
-.audio-card {
-  background: rgba(255, 255, 255, 0.05);
-
-  border: 1px solid rgba(255, 255, 255, 0.08);
-
-  border-radius: 18px;
-
-  padding: 22px;
-
-  margin-bottom: 24px;
-
-  backdrop-filter: blur(12px);
-
-  transition: 0.3s ease;
-
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-}
-
-.audio-card:hover {
-  transform: translateY(-4px);
-
-  border-color: rgba(96, 165, 250, 0.4);
-
-  box-shadow: 0 12px 30px rgba(96, 165, 250, 0.15);
-}
-
-/* =========================================
-   Audio Header
-========================================= */
-.audio-header {
+.music-list {
   display: flex;
 
-  justify-content: space-between;
+  flex-direction: column;
+
+  gap: 14px;
+}
+
+/* =========================================
+   Music Item
+========================================= */
+.music-item {
+  display: flex;
 
   align-items: center;
 
-  gap: 20px;
+  justify-content: space-between;
 
-  margin-bottom: 18px;
+  background: #1a2332fa;
+
+  border-radius: 18px;
+
+  padding: 14px 18px;
+
+  transition: 0.3s ease;
+
+  border: 1px solid transparent;
+}
+
+/* .music-item:hover {
+  background: #bbd5da;
+
+  transform: translateY(-2px);
+
+  border-color: rgba(0, 0, 0, 0.08);
+} */
+
+/* =========================================
+   Left Section
+========================================= */
+.music-left {
+  display: flex;
+
+  align-items: center;
+
+  gap: 18px;
+
+  flex: 1;
 }
 
 /* =========================================
-   Audio Info
+   Song Image
 ========================================= */
-.audio-info h4 {
-  margin: 0;
+.music-image {
+  width: 72px;
 
-  font-size: 1.3rem;
+  height: 72px;
 
-  color: #ffffff;
+  border-radius: 12px;
+
+  object-fit: cover;
+
+  background: #ccc;
+
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
-.audio-info p {
-  margin-top: 8px;
+/* =========================================
+   Song Info
+========================================= */
+.music-info h3 {
+  margin: 0;
 
-  color: #cbd5e1;
+  font-size: 1.15rem;
+
+  color: #ffffff;
+
+  font-weight: 700;
+}
+
+.music-info p {
+  margin-top: 6px;
+
+  color: #ffffff;
 
   font-size: 0.95rem;
 }
 
 /* =========================================
-   Node Tags
+   Audio Player
 ========================================= */
-.node-tag {
-  display: inline-block;
-
-  padding: 4px 10px;
-
-  margin-right: 8px;
-  margin-top: 6px;
-
-  border-radius: 999px;
-
-  font-size: 0.8rem;
-  font-weight: 600;
+.music-player {
+  margin-top: 12px;
 }
 
-.primary-tag {
-  background: rgba(59, 130, 246, 0.2);
+/* =========================================
+   Right Section
+========================================= */
+.music-right {
+  display: flex;
 
-  color: #60a5fa;
-}
+  align-items: center;
 
-.replica-tag {
-  background: rgba(16, 185, 129, 0.2);
-
-  color: #34d399;
-}
-
-.backup-tag {
-  background: rgba(168, 85, 247, 0.2);
-
-  color: #c084fc;
+  gap: 16px;
 }
 
 /* =========================================
    Delete Button
 ========================================= */
 .delete-btn {
-  border: none;
-
-  background: linear-gradient(
-    135deg,
-    #ef4444,
-    #dc2626
-  );
+  background: #ff0000;
 
   color: white;
 
+  border: none;
+
   padding: 10px 18px;
 
-  border-radius: 12px;
-
-  font-size: 0.95rem;
-  font-weight: 600;
+  border-radius: 10px;
 
   cursor: pointer;
+
+  font-weight: 700;
 
   transition: 0.3s ease;
 }
 
 .delete-btn:hover {
-  transform: scale(1.05);
+  background: #d90000;
 
-  box-shadow: 0 6px 18px rgba(239, 68, 68, 0.35);
-}
-
-/* =========================================
-   Empty State
-========================================= */
-.empty-library {
-  text-align: center;
-
-  margin-top: 80px;
-
-  color: #94a3b8;
-
-  font-size: 1.1rem;
+  transform: scale(1.04);
 }
 
 /* =========================================
    Responsive
 ========================================= */
 @media (max-width: 768px) {
-  .library-container {
-    padding: 20px;
-  }
-
-  .audio-header {
+  .music-item {
     flex-direction: column;
+
     align-items: flex-start;
+
+    gap: 16px;
   }
 
-  .delete-btn {
+  .music-right {
     width: 100%;
+
+    justify-content: space-between;
   }
+
+  .music-image {
+    width: 64px;
+    height: 64px;
+  }
+}
+
+/* =========================================
+   Node Info
+========================================= */
+.node-info {
+  display: flex;
+
+  flex-wrap: wrap;
+
+  gap: 10px;
+
+  margin-top: 10px;
+}
+
+/* =========================================
+   Node Badge
+========================================= */
+.node-badge {
+  padding: 6px 12px;
+
+  border-radius: 999px;
+
+  font-size: 0.82rem;
+
+  font-weight: 700;
+}
+
+/* =========================================
+   Primary Node
+========================================= */
+.primary-node {
+  background: rgba(255, 0, 0, 0.12);
+
+  color: #ff0000;
+}
+
+/* =========================================
+   Replica Node
+========================================= */
+.replica-node {
+  background: rgba(0, 128, 128, 0.12);
+
+  color: #0f766e;
+}
+
+/* =========================================
+   Backup Node
+========================================= */
+.backup-node {
+  background: rgba(30, 64, 175, 0.12);
+
+  color: #1d4ed8;
 }
