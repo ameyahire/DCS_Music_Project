@@ -5,7 +5,64 @@ const Audio = require("../models/Audio");
 
 const router = express.Router();
 
+const axios = require("axios");
+
+// ============================================
+// Cluster Nodes
+// ============================================
+
+const clusterNodes = [
+  "http://localhost:5001",
+  "http://localhost:5002",
+  "http://localhost:5003",
+];
+
 router.get("/:filename", async (req, res) => {
+
+// ============================================
+// Check Cluster Availability
+// ============================================
+
+const responses =
+  await Promise.allSettled(
+    clusterNodes.map((url) =>
+      axios.get(
+        `${url}/api/consensus/status`,
+        {
+          timeout: 1000,
+        }
+      )
+    )
+  );
+
+const healthyNodes =
+  responses.filter(
+    (res) =>
+      res.status === "fulfilled" &&
+      res.value.data.isHealthy
+  ).length;
+
+console.log(`
+=================================
+STREAM CHECK
+Healthy Nodes: ${healthyNodes}
+=================================
+`);
+
+// ============================================
+// Block Streaming If ALL Nodes Dead
+// ============================================
+
+if (healthyNodes === 0) {
+  return res.status(503).json({
+    success: false,
+
+    error:
+      "All storage nodes unavailable. Streaming failed.",
+  });
+}
+
+  
   try {
     const audio = await Audio.findOne({
       filename: req.params.filename,

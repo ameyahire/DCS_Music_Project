@@ -574,8 +574,11 @@ router.get("/status", (req, res) => {
     state: currentState,
 
     isLeader:
-      currentState ===
-      STATES.LEADER,
+      currentState === STATES.LEADER,
+
+    isHealthy:
+      nodeHealth[NODE_ID]
+        ?.isHealthy,
 
     term: currentTerm,
 
@@ -600,3 +603,8 @@ resetElectionTimer();
 // ============================================
 
 module.exports = router;
+
+module.exports.nodeHealth =
+  nodeHealth;
+
+module.exports.nodes = nodes;

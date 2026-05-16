@@ -2,6 +2,18 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
+const axios = require("axios");
+
+// ============================================
+// Cluster Nodes
+// ============================================
+
+const clusterNodes = [
+  "http://localhost:5001",
+  "http://localhost:5002",
+  "http://localhost:5003",
+];
+
 // ============================================
 // Storage Node Configuration
 // ============================================
@@ -146,57 +158,161 @@ function getFilePath(fileId) {
 // ============================================
 // Stream File
 // ============================================
-function streamFile(fileId, res) {
-  const fileInfo = getFilePath(fileId);
 
-  if (!fileInfo.exists) {
-    return res.status(404).json({
-      error: "File not found",
+async function streamFile(fileId, res) {
+  try {
+    const fileInfo = getFilePath(fileId);
+
+    // ============================================
+    // File Exists Check
+    // ============================================
+
+    if (!fileInfo.exists) {
+      return res.status(404).json({
+        error: "File not found",
+      });
+    }
+
+    // ============================================
+    // Check Cluster Availability
+    // ============================================
+
+    const responses =
+      await Promise.allSettled(
+        clusterNodes.map((url) =>
+          axios.get(
+            `${url}/api/consensus/status`,
+            {
+              timeout: 1000,
+            }
+          )
+        )
+      );
+
+    // Count Healthy Nodes
+    const healthyNodes =
+      responses.filter(
+        (res) =>
+          res.status ===
+            "fulfilled" &&
+          res.value.data
+            .isHealthy
+      ).length;
+
+    console.log(`
+=================================
+STREAM CHECK
+Healthy Nodes: ${healthyNodes}
+=================================
+`);
+
+    // ============================================
+    // Block Streaming If ALL Nodes Dead
+    // ============================================
+
+    if (healthyNodes === 0) {
+      return res.status(503).json({
+        success: false,
+
+        error:
+          "All storage nodes unavailable. Streaming failed.",
+      });
+    }
+
+    // ============================================
+    // File Stats
+    // ============================================
+
+    const stat = fs.statSync(
+      fileInfo.path
+    );
+
+    const fileSize = stat.size;
+
+    const range =
+      res.req.headers.range;
+
+    // ============================================
+    // HTTP Range Streaming
+    // ============================================
+
+    if (range) {
+      const parts = range
+        .replace(/bytes=/, "")
+        .split("-");
+
+      const start = parseInt(
+        parts[0],
+        10
+      );
+
+      const end = parts[1]
+        ? parseInt(parts[1], 10)
+        : fileSize - 1;
+
+      const chunkSize =
+        end - start + 1;
+
+      const stream =
+        fs.createReadStream(
+          fileInfo.path,
+          {
+            start,
+            end,
+          }
+        );
+
+      const headers = {
+        "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+
+        "Accept-Ranges":
+          "bytes",
+
+        "Content-Length":
+          chunkSize,
+
+        "Content-Type":
+          "audio/mpeg",
+      };
+
+      res.writeHead(206, headers);
+
+      stream.pipe(res);
+    } else {
+      // ============================================
+      // Full File Streaming
+      // ============================================
+
+      const headers = {
+        "Content-Length":
+          fileSize,
+
+        "Content-Type":
+          "audio/mpeg",
+      };
+
+      res.writeHead(200, headers);
+
+      fs.createReadStream(
+        fileInfo.path
+      ).pipe(res);
+    }
+  } catch (error) {
+    console.error(`
+=================================
+STREAM ERROR
+=================================
+`);
+
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+
+      error:
+        error.message ||
+        "Streaming failed",
     });
-  }
-
-  const stat = fs.statSync(fileInfo.path);
-  const fileSize = stat.size;
-  const range = res.req.headers.range;
-
-  // ============================================
-  // HTTP Range Streaming
-  // ============================================
-  if (range) {
-    const parts = range.replace(/bytes=/, "").split("-");
-
-    const start = parseInt(parts[0], 10);
-
-    const end = parts[1]
-      ? parseInt(parts[1], 10)
-      : fileSize - 1;
-
-    const chunkSize = end - start + 1;
-
-    const stream = fs.createReadStream(fileInfo.path, {
-      start,
-      end,
-    });
-
-    const headers = {
-      "Content-Range": `bytes ${start}-${end}/${fileSize}`,
-      "Accept-Ranges": "bytes",
-      "Content-Length": chunkSize,
-      "Content-Type": "audio/mpeg",
-    };
-
-    res.writeHead(206, headers);
-
-    stream.pipe(res);
-  } else {
-    const headers = {
-      "Content-Length": fileSize,
-      "Content-Type": "audio/mpeg",
-    };
-
-    res.writeHead(200, headers);
-
-    fs.createReadStream(fileInfo.path).pipe(res);
   }
 }
 
