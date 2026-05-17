@@ -440,6 +440,57 @@ router.post(
 // Internal Fail
 // ============================================
 
+// Real Node Failure Simulation - No Process Exit, Just Mark Unhealthy
+
+// router.post(
+//   "/internal-fail",
+//   (req, res) => {
+//     nodeHealth[NODE_ID].isHealthy =
+//       false;
+
+//     nodeHealth[NODE_ID].failedAt =
+//       new Date().toISOString();
+
+//     console.log(`
+// =================================
+// 💀 ${NODE_ID} CRASHED
+// =================================
+// `);
+
+//     clearInterval(heartbeatTimer);
+
+//     clearTimeout(electionTimer);
+
+//     currentState =
+//       STATES.FOLLOWER;
+
+//     leaderId = null;
+
+//     votedFor = null;
+
+//     // Send response BEFORE shutdown
+//     res.json({
+//       success: true,
+
+//       node: NODE_ID,
+
+//       message:
+//         "Node crashed successfully",
+//     });
+
+//     // Give response time to send
+//     setTimeout(() => {
+//       console.log(
+//         `🛑 Shutting down ${NODE_ID}`
+//       );
+
+//       process.exit(1);
+//     }, 1000);
+//   }
+// );
+
+//Simulation Node Failure
+
 router.post(
   "/internal-fail",
   (req, res) => {
